@@ -1,0 +1,50 @@
+#模型预测
+def predict_RNN(net,x,num_steps,num_preds=0,input_size = 1):
+    # x_test默认是一个一维len_x的时间序列，转换成batch_size * len_x * input_size = 1*len_x*1的tensor，是预测时候已知的前置信息；
+    # num_preds，预测多少个时间段的信息，即在x后生成num_preds个时间步；
+    # 思路：每次用训练样本等长的x_test片段来预测新的等长预测，
+    #预测x_test内部的时间步时，只更新state，;预测然后只取第一个时间步更新到输入样本中
+    n = len(x) #时间长度
+    times = num_preds //num_steps + 1
+    #需要预测的时间长度
+    x = torch.tensor(x, dtype = torch.float32).reshape(1,-1,input_size)
+    new_x = torch.zeros((n+num_preds,input_size)).reshape(1,-1,input_size)
+    #num_steps = min(n,num_steps) #选择前置信息和
+    y_test = torch.zeros(size=(1,n+times*num_steps,input_size))
+    state = net.begin_state(batch_size = 1)
+    for i in range(n-num_steps): #x_test内部预测, 3 1 2 3 4 5
+        yhat,state = net(x[:,i:i+num_steps,:],state.detach()) # yhat的size是(batch_size*num_steps, input_size)
+        #y_test[0,i+num_steps,:] = x[0,i+num_steps,:]
+        y_test[0,i+num_steps,:] = yhat[-1,:]
+        new_x[0,i+num_steps,:] = x[0,i+num_steps,:]
+    
+    for i in range(0,num_preds):
+        yhat,state = net(new_x[:,n-num_steps+i:n+i,:],state.detach())
+        y_test[0,n+i,:] = yhat[-1,:]
+        new_x[0,n+i,:] = yhat[-1,:]
+    return y_test
+
+
+def plot_RNN(year,x,output,train_test_rate=0.9):
+    #可视化图形
+    ind = int(len(x)*train_test_rate)
+    fig,ax = plt.subplots(figsize = (10,6))  
+    ax.plot(year,x,label='Real data') #画原数据曲线
+    ax.plot(year,output,label='Fitted data') #画拟合曲线
+    ax.axvline(x=year[ind], color='r', linestyle='--') #画辅助线
+    ax.set_xlabel('time')
+    ax.set_ylabel('value')
+    ax.legend()
+    # 在x轴顶部对应比例位置添加文本
+    text_y_position = plt.gca().get_ylim()[1]  # 文本所在y轴位置
+    ax.text((year[0]+year[ind])//2, text_y_position, 'Train set', ha='center',color="red",fontsize=14)
+    ax.text((year[-1]+year[ind])//2, text_y_position, 'Test set', ha='center',color="red",fontsize=14)
+    ax.set_title('Result of RNN',pad=20,fontsize=15)
+    return fig
+
+if __name__ == '__main__': 
+    num_steps = 35
+    num_preds = 0
+    output = predict_RNN(net,x,num_steps,num_preds,input_size = 1)
+    fig = plot_RNN(year[num_steps:],x[num_steps:],output.reshape(-1)[num_steps:len(year)].detach(),train_test_rate=0.9)
+    pred = output.reshape(-1)[len(year):len(year)+num_preds].detach()
